@@ -1,0 +1,22 @@
+@host = https://localhost:7180
+@token = paste-jwt-here
+
+### Health
+GET {{host}}/api/health
+
+### Login as seeded Backoffice
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "nicOrEmail": "backoffice@solar.local",
+  "password": "ChangeMe123!"
+}
+
+### Live dashboard
+GET {{host}}/api/reservations/dashboard
+Authorization: Bearer {{token}}
+
+### Pending prosumers
+GET {{host}}/api/users?role=Prosumer&status=Pending
+Authorization: Bearer {{token}}

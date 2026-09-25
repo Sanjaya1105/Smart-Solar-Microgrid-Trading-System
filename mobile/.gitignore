@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+appsettings.Local.json
+.env
+publish/
+mobile/.gradle/
+mobile/build/
+mobile/app/build/
+mobile/local.properties
