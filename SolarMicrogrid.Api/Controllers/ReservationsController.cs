@@ -5,3 +5,10 @@
         return CreatedAtAction(nameof(GetMine), new { id = reservation.Id }, reservation);
     }
 
+[HttpPost("complete-by-qr"), Authorize(Roles = "GridOperator")]
+    public async Task<IActionResult> CompleteByQr(CompleteReservationRequest request, CancellationToken cancellationToken)
+    {
+        // Verify the scanned QR against server state and finalize the transfer.
+        return Ok(await service.CompleteByQrAsync(User.UserId(), request.QrToken, cancellationToken));
+    }
+
