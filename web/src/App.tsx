@@ -113,8 +113,145 @@ function App() {
     catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to sign in. Please try again.') }
     finally { setBusy(false) }
   }
+  if (!loggedIn) return <><LoginScreen email={email} password={password} setEmail={setEmail} setPassword={setPassword} onSubmit={signIn} busy={busy} notice={notice} onRegister={() => setShowRegistration(true)} />{showRegistration && <ProsumerRegistrationModal onClose={() => setShowRegistration(false)} onRegistered={(registeredEmail) => { setShowRegistration(false); setEmail(registeredEmail); setPassword(''); setNotice('Registration successful. Your account is pending Backoffice activation. You can sign in after it is activated.') }} />}</>
+  const nav = [{ id: 'overview' as Page, label: 'Overview', icon: LayoutDashboard }, { id: 'stations' as Page, label: 'Solar stations', icon: SunMedium }, { id: 'reservations' as Page, label: 'Reservations', icon: CalendarDays }, ...(role === 'Backoffice' ? [{ id: 'people' as Page, label: 'People & access', icon: Users }] : [])]
+  const reload = () => { setDataState('loading'); setReloadVersion((value) => value + 1) }
+  const openQr = (value: string) => { setQrValue(value); setShowQr(true) }
+  return <div className="app-shell"><aside className={`sidebar ${mobileNav ? 'is-open' : ''}`}><div className="brand"><span className="brand-mark"><SunMedium size={20} /></span><span>solar<span>grid</span></span></div><div className="workspace-label">{role === 'Prosumer' ? 'PROSUMER SPACE' : 'CONTROL ROOM'} <span>{dataState === 'ready' ? 'API' : dataState === 'loading' ? 'LOADING' : 'UNAVAILABLE'}</span></div><nav>{nav.map(({ id, label, icon: Icon }) => <button key={id} className={page === id ? 'nav-item active' : 'nav-item'} onClick={() => { setPage(id); setMobileNav(false) }}><Icon size={18} /><span>{label}</span>{page === id && <ChevronRight size={15} className="nav-arrow" />}</button>)}</nav><div className="sidebar-bottom"><button className={page === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => { setPage('settings'); setMobileNav(false) }}><Settings2 size={18} /><span>Settings</span></button><button className="nav-item" onClick={() => { localStorage.removeItem('solargrid.token'); localStorage.removeItem('solargrid.role'); localStorage.removeItem('solargrid.fullName'); setLoggedIn(false); setToken(''); setPassword(''); setFullName(''); setReservations([]); setStations([]); setShowQr(false); setQrValue(''); setShowBooking(false); setShowStationForm(false); setEditingReservation(null); setNotice('') }}><LogOut size={18} /><span>Sign out</span></button><div className="mini-profile"><div className="avatar">{fullName.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2) || role[0]}</div><div><strong>{fullName || role}</strong><small>{role}</small></div><CircleHelp size={16} /></div></div></aside>{mobileNav && <button className="scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}<main className="main-content"><header className="topbar"><button className="icon-button menu-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Solargrid</span><ChevronRight size={14} /><strong>{page === 'settings' ? 'Settings' : nav.find((item) => item.id === page)?.label}</strong></div><div className="top-actions"><span className="role-badge">{role}</span><button className="icon-button" title="Search reservations" onClick={() => setPage('reservations')}><Search size={18} /></button><button className="help-button" onClick={() => setNotice('Bookings must be within 7 days. Changes and cancellations require 12 hours notice. Contact Backoffice for account activation or support.')}><CircleHelp size={16} /> Help centre</button><div className="avatar">{fullName.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2) || role[0]}</div></div></header><div className="content-wrap">{notice && <div className="notice"><Activity size={16} /> {notice}<button onClick={() => setNotice('')}><X size={14} /></button></div>}{page !== 'settings' && dataState === 'loading' && <p className="muted" role="status">Loading workspace data...</p>}{page !== 'settings' && dataState === 'error' && <button className="primary-button" onClick={reload}>Retry loading data</button>}{dataState === 'ready' && page === 'overview' && <Overview dashboard={dashboard} stations={stations} fullName={fullName} pendingUsers={pendingUsers} role={role} setPage={setPage} reservations={reservations} onQr={() => setPage('reservations')} onBook={() => setShowBooking(true)} />}{dataState === 'ready' && page === 'stations' && <Stations stations={stations} role={role} token={token} onAdd={() => setShowStationForm(true)} onChanged={reload} />}{dataState === 'ready' && page === 'reservations' && <Reservations reservations={reservations} role={role} token={token} onQr={() => setNotice('Use the Grid Operator scanning client to scan and complete a reservation.')} onBook={() => setShowBooking(true)} onChanged={reload} onApproved={(value) => openQr(value)} onEdit={(reservation) => setEditingReservation(reservation)} />}{page === 'settings' && <AccountSettings token={token} />}{dataState === 'ready' && page === 'people' && <PeopleManagement token={token} onChanged={reload} />}</div></main>{showQr && <QrModal value={qrValue} onClose={() => setShowQr(false)} />}{showBooking && <BookingModal role={role} stations={stations} token={token} onClose={() => setShowBooking(false)} onCreated={(message) => { setShowBooking(false); setNotice(message); reload() }} />}{editingReservation && <ReservationEditorModal role={role} stations={stations} token={token} reservation={editingReservation} onClose={() => setEditingReservation(null)} onSaved={() => { setEditingReservation(null); setNotice('Reservation updated. It is now waiting for approval; any previous QR code is no longer valid.'); reload() }} />}{showStationForm && <StationModal token={token} onClose={() => setShowStationForm(false)} onSaved={(message) => { setShowStationForm(false); setNotice(message); reload() }} />}</div>
+}
 
-  <p className="muted">{canManage ? 'Add nodes, set operating hours and keep the network live.' : 'A living view of every node in your clean energy network.'}</p>
+function AccountSettings({ token }: { token: string }) {
+  const [account, setAccount] = useState<{ fullName: string; email: string } | null>(null)
+  const [accountError, setAccountError] = useState('')
+  const [retry, setRetry] = useState(0)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    apiRequest('/api/auth/account', token).then((data) => {
+      if (!data || typeof data.fullName !== 'string' || typeof data.email !== 'string') throw new Error('Unable to load account.')
+      if (!cancelled) setAccount(data)
+    }).catch((error) => { if (!cancelled) setAccountError(error instanceof Error ? error.message : 'Unable to load account.') })
+    return () => { cancelled = true }
+  }, [token, retry])
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (busy) return
+    setError(''); setSuccess('')
+    if (newPassword !== confirmPassword) { setError('New passwords do not match.'); return }
+    if (currentPassword === newPassword) { setError('Choose a different new password.'); return }
+    setBusy(true)
+    try {
+      await apiRequest('/api/auth/change-password', token, { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) })
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setSuccess('Password changed successfully. Use your new password next time you sign in.')
+    } catch (error) { setError(error instanceof Error ? error.message : 'Unable to change password.') }
+    finally { setBusy(false) }
+  }
+  return <><section className="page-intro"><div><p className="eyebrow">YOUR ACCOUNT</p><h1>Settings</h1><p className="muted">View your account and change your password.</p></div></section>
+    <section className="panel" style={{ maxWidth: 520 }}>
+      {account ? <div className="booking-form"><label>Name<input readOnly value={account.fullName} /></label><label>Email<input readOnly value={account.email} /></label></div> : accountError ? <div role="alert"><p className="form-error">{accountError}</p><button className="text-button" onClick={() => { setAccountError(''); setRetry((value) => value + 1) }}>Retry</button></div> : <p role="status">Loading account...</p>}
+      <form className="booking-form" onSubmit={submit}><h2>Change password</h2>
+        <label>Current password<input required disabled={busy} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+        <label>New password<input required disabled={busy} type="password" minLength={8} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /><span className="muted">At least 8 characters.</span></label>
+        <label>Confirm new password<input required disabled={busy} type="password" minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
+        {error && <p className="form-error" role="alert">{error}</p>}{success && <p className="notice" role="status">{success}</p>}
+        <button className="primary-button" disabled={busy}>{busy ? 'Saving...' : 'Change password'}<ShieldCheck size={16} /></button>
+      </form>
+    </section></>
+}
+
+function ProsumerRegistrationModal({ onClose, onRegistered }: { onClose: () => void; onRegistered: (email: string) => void }) {
+  const [form, setForm] = useState({ fullName: '', nic: '', email: '', phone: '', address: '', password: '' })
+  const [confirmation, setConfirmation] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }))
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (busy) return
+    setError('')
+    if (form.password !== confirmation) { setError('Passwords do not match.'); return }
+    if (![form.fullName, form.nic, form.email, form.phone, form.address].every((value) => value.trim())) { setError('Please complete all fields.'); return }
+    setBusy(true)
+    try {
+      await apiRequest('/api/auth/register-prosumer', '', { method: 'POST', body: JSON.stringify({ ...form, fullName: form.fullName.trim(), nic: form.nic.trim(), email: form.email.trim(), phone: form.phone.trim(), address: form.address.trim() }) })
+      onRegistered(form.email.trim())
+    } catch (error) { setError(error instanceof Error ? error.message : 'Unable to register. Please try again.') }
+    finally { setBusy(false) }
+  }
+  return <div className="modal-backdrop" onClick={() => { if (!busy) onClose() }}><div className="form-modal station-form-modal" role="dialog" aria-modal="true" aria-labelledby="registration-title" onClick={(event) => event.stopPropagation()}>
+    <button type="button" className="modal-close" aria-label="Close registration" disabled={busy} onClick={onClose}><X size={18} /></button>
+    <p className="eyebrow">JOIN SOLARGRID</p><h2 id="registration-title">Register as a prosumer</h2><p className="muted">Create your account. Backoffice must activate it before you can sign in.</p>
+    <form className="booking-form" onSubmit={submit}>
+      <label>Full name<input autoFocus required maxLength={100} disabled={busy} autoComplete="name" value={form.fullName} onChange={(event) => update('fullName', event.target.value)} /></label>
+      <label>NIC<input required minLength={9} maxLength={12} disabled={busy} value={form.nic} onChange={(event) => update('nic', event.target.value)} /></label>
+      <label>Email<input required type="email" disabled={busy} autoComplete="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></label>
+      <label>Phone<input required type="tel" disabled={busy} autoComplete="tel" value={form.phone} onChange={(event) => update('phone', event.target.value)} /></label>
+      <label>Address<input required maxLength={250} disabled={busy} autoComplete="street-address" value={form.address} onChange={(event) => update('address', event.target.value)} /></label>
+      <label>Password<input required type="password" minLength={8} disabled={busy} autoComplete="new-password" value={form.password} onChange={(event) => update('password', event.target.value)} /><span className="muted">At least 8 characters.</span></label>
+      <label>Confirm password<input required type="password" minLength={8} disabled={busy} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <button className="primary-button wide" disabled={busy}>{busy ? 'Registering...' : 'Create account'}<ArrowUpRight size={16} /></button>
+      <button type="button" className="text-button" disabled={busy} onClick={onClose}>Back to sign in</button>
+    </form>
+  </div></div>
+}
+
+function LoginScreen({ email, password, setEmail, setPassword, onSubmit, busy, notice, onRegister }: { onRegister: () => void; email: string; password: string; setEmail: (value: string) => void; setPassword: (value: string) => void; onSubmit: (event: FormEvent) => void; busy: boolean; notice: string }) { return <div className="login-screen"><div className="login-art"><div className="orb orb-one" /><div className="orb orb-two" /><div className="login-art-content"><div className="brand light"><span className="brand-mark"><SunMedium size={20} /></span><span>solar<span>grid</span></span></div><div className="art-copy"><p className="eyebrow">SMART ENERGY OPERATIONS</p><h1>Make every<br /><em>ray</em> count.</h1><p>One calm command centre for stations, bookings, and the people powering tomorrow.</p><div className="energy-line"><span /><span /><span /><span /><span /><span /><span /></div><small>Sign in to view your stations and reservations.</small></div></div></div><div className="login-panel"><div className="login-box"><p className="eyebrow">WELCOME BACK</p><h2>Power the network.</h2><p className="muted">Sign in to your Solargrid workspace.</p><form onSubmit={onSubmit}><label>Email or NIC<input value={email} onChange={(event) => setEmail(event.target.value)} /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label><div className="form-row"><span className="muted">Forgot your password? Contact Backoffice for support.</span></div><button className="primary-button wide" disabled={busy}>{busy ? 'Connecting…' : 'Enter workspace'} <ArrowUpRight size={17} /></button></form>{notice && <p className="login-notice">{notice}</p>}<div className="login-footer"><span>New to the network?</span><button type="button" className="text-button" disabled={busy} onClick={onRegister}>Register as a prosumer</button></div></div><div className="login-meta"><span>© {new Date().getFullYear()} Solargrid</span><span><ShieldCheck size={14} /> Secure access</span></div></div></div> }
+
+function Overview({ dashboard, role, fullName, stations, pendingUsers, setPage, reservations, onQr, onBook }: { dashboard: { pendingReservations: number; approvedFutureReservations: number; completedReservations: number; activeStations: number } | null; role: Role; fullName: string; stations: Station[]; pendingUsers: number; setPage: (page: Page) => void; reservations: Reservation[]; onQr: () => void; onBook: () => void }) {
+  const isProsumer = role === 'Prosumer'
+  const count = (status: string) => reservations.filter((item) => item.status === status).length
+  return <>
+    <section className="page-intro"><div><p className="eyebrow">{new Date().toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p><h1>{fullName ? `Welcome, ${fullName}.` : 'Welcome.'}</h1><p className="muted">{isProsumer ? 'Your reservations and available stations.' : 'Your station and reservation overview.'}</p></div><button className="primary-button" onClick={() => isProsumer ? onBook() : setPage('stations')}><Zap size={16} />{isProsumer ? 'Book a slot' : 'View stations'}</button></section>
+    <section className="metric-grid">
+      <Metric icon={CalendarDays} label={isProsumer ? 'Your bookings' : 'Reservations'} value={reservations.length} accent="mint" />
+      <Metric icon={Activity} label="Pending reservations" value={dashboard?.pendingReservations ?? count('Pending')} accent="sun" />
+      <Metric icon={Check} label="Completed reservations" value={dashboard?.completedReservations ?? count('Completed')} accent="blue" />
+      <Metric icon={MapPin} label="Active stations" value={dashboard?.activeStations ?? stations.filter((station) => station.status === 'Active').length} accent="coral" />
+    </section>
+    <section className="dashboard-grid">
+      <div className="panel timeline-panel"><div className="panel-heading d-flex justify-content-between align-items-center"><div><p className="eyebrow">RESERVATIONS</p><h2>Recent bookings</h2></div><button className="quiet-button" onClick={() => setPage('reservations')}>View all <ArrowUpRight size={14} /></button></div>
+        <div className="timeline">{reservations.length === 0 && <p className="muted">No reservations yet.</p>}{reservations.slice(0, 3).map((item, index) => <div className="timeline-item" key={item.id}><div className={`timeline-dot dot-${index}`} /><div><strong>{item.name}</strong><p>ID {shortReservationId(item.id)} / {item.person} / {item.time}</p></div><span className={`status ${item.status.toLowerCase()}`}>{item.status}</span></div>)}</div>
+        <div className="panel-footer"><span>{dashboard?.approvedFutureReservations ?? countApprovedFuture(reservations)} approved future reservations</span>{isProsumer && <button className="circle-action" onClick={onQr} title="View reservations to generate a QR code"><ScanLine size={17} /></button>}</div>
+      </div>
+      <div className="panel station-strip"><div className="panel-heading d-flex justify-content-between align-items-center"><div><p className="eyebrow">STATIONS</p><h2>Stations at a glance</h2></div><button className="quiet-button" onClick={() => setPage('stations')}>View all <ArrowUpRight size={14} /></button></div>
+        {stations.length === 0 && <p className="muted">No stations available.</p>}{stations.slice(0, 3).map((station) => <div className="task" key={station.id}><div className="task-icon"><MapPin size={17} /></div><div><strong>{station.name}</strong><p>{station.area || 'Address unavailable'} / {station.status}</p></div></div>)}
+      </div>
+    </section>
+    <section className="lower-grid"><div className="panel task-panel"><div className="panel-heading d-flex justify-content-between align-items-center"><h2>Energy telemetry</h2><BatteryCharging size={20} /></div><p className="muted">Energy output, battery charge and station load data are not available.</p></div>
+      {role === 'Backoffice' && <div className="panel task-panel"><div className="panel-heading d-flex justify-content-between align-items-center"><h2>Prosumer activation</h2><Users size={20} /></div><p className="muted">{pendingUsers} accounts waiting for activation.</p><button className="quiet-button" onClick={() => setPage('people')}>Review accounts <ArrowUpRight size={14} /></button></div>}
+    </section>
+  </>
+}
+function Metric({ icon: Icon, label, value, accent }: { icon: typeof Activity; label: string; value: number; accent: string }) { return <div className={`metric-card ${accent}`}><div className="metric-top"><span className="metric-icon"><Icon size={17} /></span></div><p>{label}</p><strong>{value}</strong></div> }
+function Stations({ stations, role, token, onAdd, onChanged }: { stations: Station[]; role: Role; token: string; onAdd: () => void; onChanged: () => void }) {
+  const [query, setQuery] = useState('')
+  const [manageId, setManageId] = useState('')
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState('')
+  const canManage = role === 'Backoffice'
+  const visible = stations.filter((station) => `${station.name} ${station.area}`.toLowerCase().includes(query.toLowerCase()))
+  const toggle = async (station: Station) => {
+    if (!station.id) return
+    setWorking(station.id)
+    try {
+      const inactive = String(station.status).toLowerCase() === 'inactive'
+      await apiRequest(`/api/stations/${station.id}/${inactive ? 'activate' : 'deactivate'}`, token, { method: 'POST' })
+      onChanged()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to update station.') }
+    finally { setWorking('') }
+  }
+  return <>
+    <section className="page-intro">
+      <div>
+        <p className="eyebrow">FIELD NETWORK</p>
+        <h1>Solar stations</h1>
+        <p className="muted">{canManage ? 'Add nodes, set operating hours and keep the network live.' : 'A living view of every node in your clean energy network.'}</p>
       </div>
       {canManage && <button className="primary-button" onClick={onAdd}><MapPin size={16} /> Add station</button>}
     </section>
@@ -182,6 +319,174 @@ function Reservations({ reservations, role, token, onBook, onChanged, onApproved
     {summary && <div className="modal-backdrop"><div className="form-modal" role="dialog" aria-modal="true" aria-label="Reservation summary"><button className="modal-close" aria-label="Close summary" onClick={() => setSummary(null)}><X size={18} /></button><h2>Reservation summary</h2><dl><dt>ID</dt><dd>{summary.id}</dd><dt>Station</dt><dd>{summary.station}</dd><dt>Scheduled time</dt><dd>{summary.time}</dd><dt>Transaction</dt><dd>{summary.transactionType}</dd><dt>Energy</dt><dd>{summary.amount}</dd><dt>Status</dt><dd>{summary.status}</dd></dl></div></div>}
   </>
 }
-private void loadStations() { run(() -> { JSONArray stations = ApiClient.list("/api/stations?activeOnly=true", store.token()); runOnUiThread(() -> { clearDynamicRows(4); for (int i=0;i<stations.length();i++) { JSONObject station=stations.optJSONObject(i); TextView item=new TextView(this); item.setPadding(0,dp(16),0,dp(16)); double lat=station.optDouble("latitude"), lon=station.optDouble("longitude"); item.setText(station.optString("name")+"\n"+station.optString("address")+"\nGPS "+lat+", "+lon+"\nCapacity "+station.optDouble("capacityKwh")+" kWh\nTap to open in Google Maps"); item.setOnClickListener(v->{ try { startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("geo:"+lat+","+lon+"?q="+lat+","+lon+"("+Uri.encode(station.optString("name") )+")"))); } catch(Exception e) { message.setText("Google Maps is not available on this device."); } }); root.addView(item); } }); }); }
-    private void showReservations() { base("My reservations"); root.addView(button("Refresh", v -> loadReservations())); root.addView(button("Back", v -> showDashboard())); loadReservations(); }
-    private void loadReservations() { run(() -> { JSONArray reservations=ApiClient.list("/api/reservations/mine",store.token()); runOnUiThread(() -> { clearDynamicRows(4); for(int i=0;i<reservations.length();i++){ JSONObject item=reservations.optJSONObject(i); LinearLayout card=new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL); TextView row=new TextView(this); row.setPadding(0,15,0,8); row.setText("Status: "+item.optString("status")+"\nEnergy: "+item.optDouble("energyKwh")+" kWh\nReservation: "+item.optString("id")); card.addView(row); String status=item.optString("status"); if("Approved".equals(status)) card.addView(button("Show secure QR", v -> showQr(item.optString("id")))); if(!"Completed".equals(status) && !"Cancelled".equals(status) && !"Rejected".equals(status)) { card.addView(button("Edit reservation", v -> showEditReservation(item))); card.addView(button("Cancel reservation", v -> cancelReservation(item.optString("id")))); } root.addView(card); } }); }); }
+
+function WebQrScanner({ onClose, onDetected }: { onClose: () => void; onDetected: (value: string) => void }) {
+  const video = useRef<HTMLVideoElement>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let timer = 0; let scannerInstance: QrScanner | null = null
+    const start = async () => {
+      try {
+        if (!video.current) return
+        scannerInstance = new QrScanner(video.current, (result) => { onDetected(typeof result === 'string' ? result : result.data) }, { highlightScanRegion: true, returnDetailedScanResult: true })
+        await scannerInstance.start(); timer = window.setTimeout(() => scannerInstance?.stop(), 120000)
+      } catch (e) { setError(e instanceof Error ? e.message : 'Unable to access the camera.') }
+  }; start(); return () => { window.clearTimeout(timer); scannerInstance?.destroy() }
+  }, [onDetected])
+  return <div className="modal-backdrop"><div className="qr-modal" role="dialog" aria-label="Scan reservation QR"><button className="modal-close" onClick={onClose}>×</button><p className="eyebrow">GRID OPERATOR SCANNER</p><h2>Scan transaction QR</h2>{error ? <p className="form-error">{error}</p> : <video ref={video} className="qr-camera" playsInline muted /> }<button className="secondary-button wide" onClick={onClose}>Close scanner</button></div></div>
+}
+function BookingModal({ stations, token, onClose, onCreated, reservation, role = 'Prosumer' }: { role?: Role; reservation?: Reservation; stations: Station[]; token: string; onClose: () => void; onCreated: (message: string) => void }) {
+  const [prosumers, setProsumers] = useState<Array<{ id: string; fullName: string; nic: string }>>([])
+  const [prosumerId, setProsumerId] = useState('')
+  const [prosumerError, setProsumerError] = useState('')
+  const [prosumerRetry, setProsumerRetry] = useState(0)
+  useEffect(() => {
+    if (role === 'Prosumer' || reservation) return
+    let cancelled = false
+    apiRequest('/api/reservations/prosumers', token).then((data) => { if (!cancelled) setProsumers(data) }).catch((e) => { if (!cancelled) setProsumerError(e instanceof Error ? e.message : 'Unable to load prosumers.') })
+    return () => { cancelled = true }
+  }, [role, token, reservation, prosumerRetry])
+  const activeStations = stations.filter((station) => (station.status === 'Active' || station.id === reservation?.stationId) && station.id)
+  const [stationId, setStationId] = useState(reservation?.stationId ?? '')
+  const [slots, setSlots] = useState<Slot[]>([])
+  const [slotId, setSlotId] = useState(reservation?.slotId ?? '')
+  const [loadingSlots, setLoadingSlots] = useState(!!reservation?.stationId)
+  const [transactionType, setTransactionType] = useState(reservation?.transactionType ?? 'DropOff')
+  const [energyKwh, setEnergyKwh] = useState(reservation?.amount.replace(' kWh', '') ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [slotError, setSlotError] = useState('')
+  const [retryVersion, setRetryVersion] = useState(0)
+  useEffect(() => {
+    if (!stationId) return
+    let cancelled = false
+    apiRequest(`/api/stations/slots?stationId=${encodeURIComponent(stationId)}&availableOnly=${reservation ? 'false' : 'true'}`, token)
+      .then((data) => {
+        if (!Array.isArray(data)) throw new Error('Unable to load slots.')
+        if (!cancelled) setSlots(data.filter((slot: Slot) => slot.stationId === stationId && (slot.id === reservation?.slotId || (slot.status === 'Available' && slot.reservedCapacity < slot.totalCapacity && new Date(slot.startUtc).getTime() > Date.now()))))
+      })
+      .catch((error) => { if (!cancelled) setSlotError(error instanceof Error ? error.message : 'Unable to load slots.') })
+      .finally(() => { if (!cancelled) setLoadingSlots(false) })
+    return () => { cancelled = true }
+  }, [stationId, token, retryVersion, reservation])
+  const selectStation = (id: string) => {
+    setStationId(id); setSlotId(''); setSlots([]); setError(''); setSlotError(''); setLoadingSlots(!!id)
+  }
+  const selectedSlot = slots.find((slot) => slot.id === slotId && slot.stationId === stationId)
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (busy || loadingSlots || !selectedSlot) return
+    setBusy(true); setError('')
+    try {
+      await apiRequest(reservation ? `/api/reservations/${encodeURIComponent(reservation.id)}${role === 'Prosumer' ? '' : '/staff'}` : role === 'Prosumer' ? '/api/reservations' : '/api/reservations/staff', token, { method: reservation ? 'PUT' : 'POST', body: JSON.stringify({ slotId: selectedSlot.id, transactionType, energyKwh: Number(energyKwh), ...(role !== 'Prosumer' && !reservation ? { prosumerUserId: prosumerId } : {}) }) })
+      onCreated(reservation ? 'Reservation updated. It is now waiting for approval.' : 'Reservation created successfully. It is now waiting for approval.')
+    } catch (error) { setError(error instanceof Error ? error.message : 'Reservation could not be created.') }
+    finally { setBusy(false) }
+  }
+  return <div className="modal-backdrop" onClick={onClose}><div className="form-modal" onClick={(event) => event.stopPropagation()}>
+    <button className="modal-close" aria-label="Close dialog" onClick={onClose}><X size={18} /></button>
+    <p className="eyebrow">{reservation ? 'UPDATE RESERVATION' : 'NEW ENERGY RESERVATION'}</p><h2>{reservation ? 'Update your booking.' : 'Choose your moment.'}</h2><p className="muted">Select a solar station, then an available slot within the next 7 days.</p>
+    {reservation && <p className="muted">ID {shortReservationId(reservation.id)}. Changes require at least 12 hours before the current slot. Saving requires approval again and invalidates any previous QR code.</p>}
+    <form onSubmit={submit} className="booking-form">
+      {role !== 'Prosumer' && !reservation && <label>Prosumer<select required value={prosumerId} onChange={(e) => setProsumerId(e.target.value)}><option value="">Select an active prosumer</option>{prosumers.map((p) => <option value={p.id} key={p.id}>{p.fullName} / {p.nic}</option>)}</select>{prosumerError && <span role="alert">{prosumerError}<button type="button" className="text-button" onClick={() => { setProsumerError(''); setProsumerRetry((v) => v + 1) }}>Retry</button></span>}</label>}
+      <label>Solar station<select required disabled={busy || (!activeStations.length && !reservation)} value={stationId} onChange={(event) => selectStation(event.target.value)}><option value="">{activeStations.length ? 'Select a solar station' : 'No active stations available'}</option>{reservation && !activeStations.some((station) => station.id === reservation.stationId) && <option value={reservation.stationId}>{reservation.station} (current station)</option>}{activeStations.map((station) => <option value={station.id} key={station.id}>{station.name}{station.area ? ` / ${station.area}` : ''}</option>)}</select></label>
+      <label>Available slot<select required disabled={busy || loadingSlots || !slots.length} value={slotId} onChange={(event) => setSlotId(event.target.value)}><option value="">{!stationId ? 'Select a station first' : loadingSlots ? 'Loading slots...' : slotError ? 'Unable to load slots' : slots.length ? 'Select an available slot' : 'No available slots for this station'}</option>{slots.map((slot) => <option value={slot.id} key={slot.id}>{slot.id === reservation?.slotId ? 'Current booking / ' : ''}{formatDate(slot.startUtc)} - {formatDate(slot.endUtc)} / {slot.reservedCapacity}/{slot.totalCapacity} reserved</option>)}</select></label>
+      {slotError && <div role="alert"><p className="form-error">{slotError}</p><button type="button" className="text-button" disabled={loadingSlots} onClick={() => { setSlotError(''); setLoadingSlots(true); setRetryVersion((value) => value + 1) }}>Retry loading slots</button></div>}
+      <label>Transaction type<select disabled={busy} value={transactionType} onChange={(event) => setTransactionType(event.target.value)}><option value="DropOff">Drop-off</option><option value="Charging">Charging</option></select></label>
+      <label>Energy amount (kWh)<input required disabled={busy} type="number" min="0.01" step="any" value={energyKwh} onChange={(event) => setEnergyKwh(event.target.value)} /></label>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <button className="primary-button wide" disabled={busy || loadingSlots || !selectedSlot || !energyKwh}>{busy ? (reservation ? 'Saving...' : 'Creating...') : (reservation ? 'Save changes' : 'Create reservation')} <ArrowUpRight size={16} /></button>
+    </form>
+  </div></div>
+}
+function ReservationEditorModal({ role, stations, token, reservation, onClose, onSaved }: { role: Role; stations: Station[]; token: string; reservation: Reservation; onClose: () => void; onSaved: () => void }) {
+  return <BookingModal role={role} stations={stations} token={token} reservation={reservation} onClose={onClose} onCreated={onSaved} />
+}
+function StationModal({ token, onClose, onSaved }: { token: string; onClose: () => void; onSaved: (message: string) => void }) {
+  const [form, setForm] = useState({ name: '', address: '', latitude: '', longitude: '', capacityKwh: '', batteryStorageSlots: '', operatingHours: '', operatorUserId: '' })
+  const [operators, setOperators] = useState<OperatorOption[]>([])
+  const [createSlot, setCreateSlot] = useState(true)
+  const [slotStart, setSlotStart] = useState('')
+  const [slotEnd, setSlotEnd] = useState('')
+  const [slotCapacity, setSlotCapacity] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const update = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }))
+  useEffect(() => {
+    apiRequest('/api/users?role=GridOperator&status=Active', token)
+      .then((data) => { if (Array.isArray(data)) setOperators(data.map((user) => ({ id: user.id, fullName: user.fullName }))) })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Unable to load operators.'))
+  }, [token])
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const station = await apiRequest('/api/stations', token, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: form.name,
+          address: form.address,
+          latitude: Number(form.latitude),
+          longitude: Number(form.longitude),
+          capacityKwh: Number(form.capacityKwh),
+          batteryStorageSlots: Number(form.batteryStorageSlots),
+          operatingHours: form.operatingHours,
+          operatorUserId: form.operatorUserId || null,
+        }),
+      })
+      if (createSlot && station?.id) {
+        try {
+          await apiRequest('/api/stations/slots', token, {
+            method: 'POST',
+            body: JSON.stringify({
+              stationId: station.id,
+              startUtc: new Date(slotStart).toISOString(),
+              endUtc: new Date(slotEnd).toISOString(),
+              totalCapacity: Number(slotCapacity),
+            }),
+          })
+          onSaved(`${station.name} is live and its first booking slot is ready.`)
+        } catch (slotError) {
+          onSaved(`${station.name} was created, but the first slot could not be added. ${slotError instanceof Error ? slotError.message : ''}`)
+        }
+      } else {
+        onSaved(`${station?.name ?? 'Station'} was added to the network.`)
+      }
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Station could not be created.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <div className="modal-backdrop" onClick={onClose}><div className="form-modal station-form-modal" onClick={(event) => event.stopPropagation()}>
+    <button className="modal-close" aria-label="Close dialog" onClick={onClose}><X size={18} /></button>
+    <p className="eyebrow">NEW FIELD NODE</p>
+    <h2>Add a solar station.</h2>
+    <p className="muted">Create the node, then open a first bookable slot so prosumers can reserve it.</p>
+    <form onSubmit={submit} className="booking-form">
+      <label>Station name<input required value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Station name" /></label>
+      <label>Address<input required value={form.address} onChange={(event) => update('address', event.target.value)} placeholder="Station address" /></label>
+      <div className="location-picker"><p className="map-label">Pick station location on the map</p><MapContainer center={[6.9271, 79.8612]} zoom={12} scrollWheelZoom className="station-map"><TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" /><LocationPicker latitude={form.latitude} longitude={form.longitude} onPick={(lat, lon) => setForm((current) => ({ ...current, latitude: String(lat), longitude: String(lon) }))} /></MapContainer><p className="muted">Click the map to set latitude and longitude. You can fine-tune the values below.</p></div>
+      <div className="form-two"><label>Latitude<input required type="number" step="any" value={form.latitude} onChange={(event) => update('latitude', event.target.value)} /></label><label>Longitude<input required type="number" step="any" value={form.longitude} onChange={(event) => update('longitude', event.target.value)} /></label></div>
+      <div className="form-two"><label>Capacity (kWh)<input required type="number" min="0.01" value={form.capacityKwh} onChange={(event) => update('capacityKwh', event.target.value)} /></label><label>Battery slots<input required type="number" min="1" value={form.batteryStorageSlots} onChange={(event) => update('batteryStorageSlots', event.target.value)} /></label></div>
+      <label>Operating hours<input required value={form.operatingHours} onChange={(event) => update('operatingHours', event.target.value)} placeholder="08:00-18:00" /></label>
+      <label>Assigned operator
+        <select value={form.operatorUserId} onChange={(event) => update('operatorUserId', event.target.value)}>
+          <option value="">Unassigned</option>
+          {operators.map((operator) => <option value={operator.id} key={operator.id}>{operator.fullName}</option>)}
+        </select>
+      </label>
+      <label className="check slot-toggle"><input type="checkbox" checked={createSlot} onChange={(event) => setCreateSlot(event.target.checked)} /> Add a first booking slot now</label>
+      {createSlot && <>
+        <div className="form-two"><label>Slot start<input required type="datetime-local" value={slotStart} onChange={(event) => setSlotStart(event.target.value)} /></label><label>Slot end<input required type="datetime-local" value={slotEnd} onChange={(event) => setSlotEnd(event.target.value)} /></label></div>
+        <label>Slot capacity<input required type="number" min="1" value={slotCapacity} onChange={(event) => setSlotCapacity(event.target.value)} /></label>
+      </>}
+      {error && <p className="form-error">{error}</p>}
+      <button className="primary-button wide" disabled={busy}>{busy ? 'Creating…' : 'Create station'} <Check size={16} /></button>
+    </form>
+  </div></div>
+}
+function QrModal({ value, onClose }: { value: string; onClose: () => void }) { return <div className="modal-backdrop" onClick={onClose}><div className="qr-modal" role="dialog" aria-modal="true" aria-label="Reservation QR code" onClick={(event) => event.stopPropagation()}><button className="modal-close" aria-label="Close dialog" onClick={onClose}><X size={18} /></button><p className="eyebrow">APPROVED RESERVATION</p><h2>Ready for the sun.</h2><p className="muted">Show this code at the station to complete the energy transfer.</p><div className="qr-frame"><QRCodeSVG value={value} marginSize={4} size={220} bgColor="#fffdf6" fgColor="#102b2a" /></div><div className="qr-meta"><span>Secure QR payload</span><span>Single use</span></div><button className="primary-button wide" onClick={onClose}>Done <Check size={16} /></button></div></div> }
+export default App
+
