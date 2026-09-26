@@ -1529,19 +1529,19 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\Wimukthi Dilshan\\.nuget\\packages\\": {}
+    "C:\\Users\\PCS\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Wimukthi Dilshan\\Desktop\\ead\\ead github\\Smart-Solar-Microgrid-Trading-System\\SolarMicrogrid.Api\\SolarMicrogrid.Api.csproj",
-      "projectName": "SolarMicrogrid.Api",
-      "projectPath": "C:\\Users\\Wimukthi Dilshan\\Desktop\\ead\\ead github\\Smart-Solar-Microgrid-Trading-System\\SolarMicrogrid.Api\\SolarMicrogrid.Api.csproj",
-      "packagesPath": "C:\\Users\\Wimukthi Dilshan\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Wimukthi Dilshan\\Desktop\\ead\\ead github\\Smart-Solar-Microgrid-Trading-System\\SolarMicrogrid.Api\\obj\\",
+      "projectUniqueName": "E:\\sliit projects\\EAD_Projects\\Smart-Solar-Microgrid-Trading-System\\SolarMicrogrid.Api\\SolarMicrogrid.api.csproj",
+      "projectName": "SolarMicrogrid.api",
+      "projectPath": "E:\\sliit projects\\EAD_Projects\\Smart-Solar-Microgrid-Trading-System\\SolarMicrogrid.Api\\SolarMicrogrid.api.csproj",
+      "packagesPath": "C:\\Users\\PCS\\.nuget\\packages\\",
+      "outputPath": "E:\\sliit projects\\EAD_Projects\\Smart-Solar-Microgrid-Trading-System\\SolarMicrogrid.Api\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\Wimukthi Dilshan\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "C:\\Users\\PCS\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net8.0"
@@ -1602,7 +1602,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.425/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.423/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

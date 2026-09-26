@@ -1,0 +1,62 @@
+# Build output
+**/bin/
+**/obj/
+**/publish/
+**/dist/
+**/build/
+
+# .NET and IDE files
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Node.js dependencies and caches
+**/node_modules/
+.npm/
+.yarn/
+.pnpm-store/
+.eslintcache
+*.tsbuildinfo
+
+# Test and coverage output
+**/TestResults/
+coverage/
+.nyc_output/
+playwright-report/
+blob-report/
+test-results/
+
+# Environment files and local configuration
+.env
+.env.*
+!.env.example
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+
+# Mobile and Android local files
+**/.gradle/
+**/local.properties
+**/captures/
+**/.cxx/
+**/android/.gradle/
+**/android/app/build/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
