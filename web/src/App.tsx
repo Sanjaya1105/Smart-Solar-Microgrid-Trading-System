@@ -246,5 +246,5 @@ function Stations({ stations, role, token, onAdd, onChanged }: { stations: Stati
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to update station.') }
     finally { setWorking('') }
   }
-  return <>
+
  
