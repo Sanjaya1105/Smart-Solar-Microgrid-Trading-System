@@ -82,3 +82,45 @@ public async Task<EnergyReservation> UpdateForStaffAsync(string id, UpdateReserv
         return await db.Reservations.Find(BuildQueryFilter(query)).SortByDescending(x => x.CreatedAtUtc).ToListAsync(cancellationToken);
     }
 
+public async Task<EnergyReservation> CancelAsync(string reservationId, string actorId, bool staffOverride, CancellationToken cancellationToken)
+    {
+        // Cancel a booking with twelve hours' notice; staff may act for the prosumer but cannot bypass the rule.
+        var reservation = await db.Reservations.Find(x => x.Id == reservationId).FirstOrDefaultAsync(cancellationToken)
+            ?? throw new ApiException(StatusCodes.Status404NotFound, "Reservation was not found.");
+        if (!staffOverride && reservation.ProsumerUserId != actorId)
+            throw new ApiException(StatusCodes.Status403Forbidden, "You cannot cancel another prosumer's reservation.");
+        await RequireTwelveHoursAsync(reservation, cancellationToken);
+        if (reservation.Status is not (ReservationStatus.Pending or ReservationStatus.Approved))
+            throw new ApiException(StatusCodes.Status409Conflict, "Only pending or approved reservations can be cancelled.");
+        reservation.Status = ReservationStatus.Cancelled;
+        reservation.CancelledAtUtc = DateTime.UtcNow;
+        reservation.UpdatedAtUtc = DateTime.UtcNow;
+        reservation.QrTokenHash = null;
+        await db.Reservations.ReplaceOneAsync(x => x.Id == reservation.Id, reservation, cancellationToken: cancellationToken);
+        await ReleaseCapacityAsync(reservation.SlotId, cancellationToken);
+        return reservation;
+    }
+
+    public async Task<object> ApproveAsync(string reservationId, bool approve, CancellationToken cancellationToken)
+    {
+        // Approve a pending request and issue a signed QR, or reject it and free its capacity.
+        var reservation = await db.Reservations.Find(x => x.Id == reservationId).FirstOrDefaultAsync(cancellationToken)
+            ?? throw new ApiException(StatusCodes.Status404NotFound, "Reservation was not found.");
+        if (reservation.Status != ReservationStatus.Pending)
+            throw new ApiException(StatusCodes.Status409Conflict, "Only pending reservations can be approved or rejected.");
+        if (!approve)
+        {
+            reservation.Status = ReservationStatus.Rejected;
+            reservation.UpdatedAtUtc = DateTime.UtcNow;
+            await db.Reservations.ReplaceOneAsync(x => x.Id == reservation.Id, reservation, cancellationToken: cancellationToken);
+            await ReleaseCapacityAsync(reservation.SlotId, cancellationToken);
+            return new { reservation, qrToken = (string?)null };
+        }
+        var qrToken = tokens.CreateQrToken(reservation.Id!);
+        reservation.Status = ReservationStatus.Approved;
+        reservation.ApprovedAtUtc = DateTime.UtcNow;
+        reservation.UpdatedAtUtc = DateTime.UtcNow;
+        reservation.QrTokenHash = tokens.HashQrToken(qrToken);
+        await db.Reservations.ReplaceOneAsync(x => x.Id == reservation.Id, reservation, cancellationToken: cancellationToken);
+        return new { reservation, qrToken };
+    }
