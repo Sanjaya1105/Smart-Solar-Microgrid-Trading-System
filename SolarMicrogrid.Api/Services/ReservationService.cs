@@ -124,3 +124,26 @@ public async Task<EnergyReservation> CancelAsync(string reservationId, string ac
         await db.Reservations.ReplaceOneAsync(x => x.Id == reservation.Id, reservation, cancellationToken: cancellationToken);
         return new { reservation, qrToken };
     }
+        public async Task<EnergyReservation> UpdateAsync(string reservationId, string prosumerId, UpdateReservationRequest request, CancellationToken cancellationToken)
+    {
+        // Modify an owned pending/approved reservation with at least twelve hours' notice.
+        var reservation = await GetOwnedAsync(reservationId, prosumerId, cancellationToken);
+        var oldSlot = await RequireTwelveHoursAsync(reservation, cancellationToken);
+        if (reservation.Status is not (ReservationStatus.Pending or ReservationStatus.Approved))
+            throw new ApiException(StatusCodes.Status409Conflict, "Only pending or approved reservations can be updated.");
+        if (reservation.SlotId != request.SlotId)
+        {
+            var newSlot = await ReserveCapacityAsync(request.SlotId, cancellationToken);
+            await ReleaseCapacityAsync(oldSlot.Id!, cancellationToken);
+            reservation.SlotId = newSlot.Id!;
+            reservation.StationId = newSlot.StationId;
+        }
+        reservation.TransactionType = request.TransactionType;
+        reservation.EnergyKwh = request.EnergyKwh;
+        reservation.Status = ReservationStatus.Pending;
+        reservation.QrTokenHash = null;
+        reservation.ApprovedAtUtc = null;
+        reservation.UpdatedAtUtc = DateTime.UtcNow;
+        await db.Reservations.ReplaceOneAsync(x => x.Id == reservation.Id, reservation, cancellationToken: cancellationToken);
+        return reservation;
+    }
