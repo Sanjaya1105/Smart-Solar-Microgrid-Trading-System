@@ -98,3 +98,4 @@ public final class MainActivity extends AppCompatActivity {
     private void loadAvailableSlots(String stationId, ArrayAdapter<String> adapter, final JSONArray[] slotsData) {
         adapter.clear(); adapter.add("Loading available time slots..."); adapter.notifyDataSetChanged(); slotsData[0] = new JSONArray(); run(() -> { JSONArray data = ApiClient.list("/api/stations/slots?stationId=" + Uri.encode(stationId) + "&availableOnly=true", store.token()); runOnUiThread(() -> { try { adapter.clear(); adapter.add("Select an available time slot"); slotsData[0] = data; for (int i=0;i<data.length();i++) { JSONObject slot=data.getJSONObject(i); adapter.add(formatSlot(slot)); } adapter.notifyDataSetChanged(); if (data.length() == 0) message.setText("No available slots for this station."); } catch (Exception e) { message.setText(e.getMessage()); } }); });
     }
+}
