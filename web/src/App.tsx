@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Activity, ArrowUpRight, BatteryCharging, CalendarDays, Check, ChevronRight, CircleHelp, Grid2X2, LayoutDashboard, LogOut, MapPin, Menu, Pencil, Plus, QrCode, Ban, LoaderCircle, ScanLine, Search, Settings2, ShieldCheck, SunMedium, Users, X, Zap } from 'lucide-react'
-import './App.css'
+//import './App.css'
 import { apiRequest } from './api'
 import { filterReservations, countApprovedFuture } from './reservationViews'
 import { PeopleManagement, StationManagement } from './Management'
 import QrScanner from 'qr-scanner'
-import 'leaflet/dist/leaflet.css'
+//import 'leaflet/dist/leaflet.css'
 import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 
@@ -246,8 +246,7 @@ function Stations({ stations, role, token, onAdd, onChanged }: { stations: Stati
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to update station.') }
     finally { setWorking('') }
   }
-
- return <>
+  return <>
     <section className="page-intro">
       <div>
         <p className="eyebrow">FIELD NETWORK</p>
@@ -370,3 +369,124 @@ function BookingModal({ stations, token, onClose, onCreated, reservation, role =
       .finally(() => { if (!cancelled) setLoadingSlots(false) })
     return () => { cancelled = true }
   }, [stationId, token, retryVersion, reservation])
+  const selectStation = (id: string) => {
+    setStationId(id); setSlotId(''); setSlots([]); setError(''); setSlotError(''); setLoadingSlots(!!id)
+  }
+  const selectedSlot = slots.find((slot) => slot.id === slotId && slot.stationId === stationId)
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (busy || loadingSlots || !selectedSlot) return
+    setBusy(true); setError('')
+    try {
+      await apiRequest(reservation ? `/api/reservations/${encodeURIComponent(reservation.id)}${role === 'Prosumer' ? '' : '/staff'}` : role === 'Prosumer' ? '/api/reservations' : '/api/reservations/staff', token, { method: reservation ? 'PUT' : 'POST', body: JSON.stringify({ slotId: selectedSlot.id, transactionType, energyKwh: Number(energyKwh), ...(role !== 'Prosumer' && !reservation ? { prosumerUserId: prosumerId } : {}) }) })
+      onCreated(reservation ? 'Reservation updated. It is now waiting for approval.' : 'Reservation created successfully. It is now waiting for approval.')
+    } catch (error) { setError(error instanceof Error ? error.message : 'Reservation could not be created.') }
+    finally { setBusy(false) }
+  }
+  return <div className="modal-backdrop" onClick={onClose}><div className="form-modal" onClick={(event) => event.stopPropagation()}>
+    <button className="modal-close" aria-label="Close dialog" onClick={onClose}><X size={18} /></button>
+    <p className="eyebrow">{reservation ? 'UPDATE RESERVATION' : 'NEW ENERGY RESERVATION'}</p><h2>{reservation ? 'Update your booking.' : 'Choose your moment.'}</h2><p className="muted">Select a solar station, then an available slot within the next 7 days.</p>
+    {reservation && <p className="muted">ID {shortReservationId(reservation.id)}. Changes require at least 12 hours before the current slot. Saving requires approval again and invalidates any previous QR code.</p>}
+    <form onSubmit={submit} className="booking-form">
+      {role !== 'Prosumer' && !reservation && <label>Prosumer<select required value={prosumerId} onChange={(e) => setProsumerId(e.target.value)}><option value="">Select an active prosumer</option>{prosumers.map((p) => <option value={p.id} key={p.id}>{p.fullName} / {p.nic}</option>)}</select>{prosumerError && <span role="alert">{prosumerError}<button type="button" className="text-button" onClick={() => { setProsumerError(''); setProsumerRetry((v) => v + 1) }}>Retry</button></span>}</label>}
+      <label>Solar station<select required disabled={busy || (!activeStations.length && !reservation)} value={stationId} onChange={(event) => selectStation(event.target.value)}><option value="">{activeStations.length ? 'Select a solar station' : 'No active stations available'}</option>{reservation && !activeStations.some((station) => station.id === reservation.stationId) && <option value={reservation.stationId}>{reservation.station} (current station)</option>}{activeStations.map((station) => <option value={station.id} key={station.id}>{station.name}{station.area ? ` / ${station.area}` : ''}</option>)}</select></label>
+      <label>Available slot<select required disabled={busy || loadingSlots || !slots.length} value={slotId} onChange={(event) => setSlotId(event.target.value)}><option value="">{!stationId ? 'Select a station first' : loadingSlots ? 'Loading slots...' : slotError ? 'Unable to load slots' : slots.length ? 'Select an available slot' : 'No available slots for this station'}</option>{slots.map((slot) => <option value={slot.id} key={slot.id}>{slot.id === reservation?.slotId ? 'Current booking / ' : ''}{formatDate(slot.startUtc)} - {formatDate(slot.endUtc)} / {slot.reservedCapacity}/{slot.totalCapacity} reserved</option>)}</select></label>
+      {slotError && <div role="alert"><p className="form-error">{slotError}</p><button type="button" className="text-button" disabled={loadingSlots} onClick={() => { setSlotError(''); setLoadingSlots(true); setRetryVersion((value) => value + 1) }}>Retry loading slots</button></div>}
+      <label>Transaction type<select disabled={busy} value={transactionType} onChange={(event) => setTransactionType(event.target.value)}><option value="DropOff">Drop-off</option><option value="Charging">Charging</option></select></label>
+      <label>Energy amount (kWh)<input required disabled={busy} type="number" min="0.01" step="any" value={energyKwh} onChange={(event) => setEnergyKwh(event.target.value)} /></label>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <button className="primary-button wide" disabled={busy || loadingSlots || !selectedSlot || !energyKwh}>{busy ? (reservation ? 'Saving...' : 'Creating...') : (reservation ? 'Save changes' : 'Create reservation')} <ArrowUpRight size={16} /></button>
+    </form>
+  </div></div>
+}
+function ReservationEditorModal({ role, stations, token, reservation, onClose, onSaved }: { role: Role; stations: Station[]; token: string; reservation: Reservation; onClose: () => void; onSaved: () => void }) {
+  return <BookingModal role={role} stations={stations} token={token} reservation={reservation} onClose={onClose} onCreated={onSaved} />
+}
+function StationModal({ token, onClose, onSaved }: { token: string; onClose: () => void; onSaved: (message: string) => void }) {
+  const [form, setForm] = useState({ name: '', address: '', latitude: '', longitude: '', capacityKwh: '', batteryStorageSlots: '', operatingHours: '', operatorUserId: '' })
+  const [operators, setOperators] = useState<OperatorOption[]>([])
+  const [createSlot, setCreateSlot] = useState(true)
+  const [slotStart, setSlotStart] = useState('')
+  const [slotEnd, setSlotEnd] = useState('')
+  const [slotCapacity, setSlotCapacity] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const update = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }))
+  useEffect(() => {
+    apiRequest('/api/users?role=GridOperator&status=Active', token)
+      .then((data) => { if (Array.isArray(data)) setOperators(data.map((user) => ({ id: user.id, fullName: user.fullName }))) })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Unable to load operators.'))
+  }, [token])
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const station = await apiRequest('/api/stations', token, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: form.name,
+          address: form.address,
+          latitude: Number(form.latitude),
+          longitude: Number(form.longitude),
+          capacityKwh: Number(form.capacityKwh),
+          batteryStorageSlots: Number(form.batteryStorageSlots),
+          operatingHours: form.operatingHours,
+          operatorUserId: form.operatorUserId || null,
+        }),
+      })
+      if (createSlot && station?.id) {
+        try {
+          await apiRequest('/api/stations/slots', token, {
+            method: 'POST',
+            body: JSON.stringify({
+              stationId: station.id,
+              startUtc: new Date(slotStart).toISOString(),
+              endUtc: new Date(slotEnd).toISOString(),
+              totalCapacity: Number(slotCapacity),
+            }),
+          })
+          onSaved(`${station.name} is live and its first booking slot is ready.`)
+        } catch (slotError) {
+          onSaved(`${station.name} was created, but the first slot could not be added. ${slotError instanceof Error ? slotError.message : ''}`)
+        }
+      } else {
+        onSaved(`${station?.name ?? 'Station'} was added to the network.`)
+      }
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Station could not be created.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <div className="modal-backdrop" onClick={onClose}><div className="form-modal station-form-modal" onClick={(event) => event.stopPropagation()}>
+    <button className="modal-close" aria-label="Close dialog" onClick={onClose}><X size={18} /></button>
+    <p className="eyebrow">NEW FIELD NODE</p>
+    <h2>Add a solar station.</h2>
+    <p className="muted">Create the node, then open a first bookable slot so prosumers can reserve it.</p>
+    <form onSubmit={submit} className="booking-form">
+      <label>Station name<input required value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Station name" /></label>
+      <label>Address<input required value={form.address} onChange={(event) => update('address', event.target.value)} placeholder="Station address" /></label>
+      <div className="location-picker"><p className="map-label">Pick station location on the map</p><MapContainer center={[6.9271, 79.8612]} zoom={12} scrollWheelZoom className="station-map"><TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" /><LocationPicker latitude={form.latitude} longitude={form.longitude} onPick={(lat, lon) => setForm((current) => ({ ...current, latitude: String(lat), longitude: String(lon) }))} /></MapContainer><p className="muted">Click the map to set latitude and longitude. You can fine-tune the values below.</p></div>
+      <div className="form-two"><label>Latitude<input required type="number" step="any" value={form.latitude} onChange={(event) => update('latitude', event.target.value)} /></label><label>Longitude<input required type="number" step="any" value={form.longitude} onChange={(event) => update('longitude', event.target.value)} /></label></div>
+      <div className="form-two"><label>Capacity (kWh)<input required type="number" min="0.01" value={form.capacityKwh} onChange={(event) => update('capacityKwh', event.target.value)} /></label><label>Battery slots<input required type="number" min="1" value={form.batteryStorageSlots} onChange={(event) => update('batteryStorageSlots', event.target.value)} /></label></div>
+      <label>Operating hours<input required value={form.operatingHours} onChange={(event) => update('operatingHours', event.target.value)} placeholder="08:00-18:00" /></label>
+      <label>Assigned operator
+        <select value={form.operatorUserId} onChange={(event) => update('operatorUserId', event.target.value)}>
+          <option value="">Unassigned</option>
+          {operators.map((operator) => <option value={operator.id} key={operator.id}>{operator.fullName}</option>)}
+        </select>
+      </label>
+      <label className="check slot-toggle"><input type="checkbox" checked={createSlot} onChange={(event) => setCreateSlot(event.target.checked)} /> Add a first booking slot now</label>
+      {createSlot && <>
+        <div className="form-two"><label>Slot start<input required type="datetime-local" value={slotStart} onChange={(event) => setSlotStart(event.target.value)} /></label><label>Slot end<input required type="datetime-local" value={slotEnd} onChange={(event) => setSlotEnd(event.target.value)} /></label></div>
+        <label>Slot capacity<input required type="number" min="1" value={slotCapacity} onChange={(event) => setSlotCapacity(event.target.value)} /></label>
+      </>}
+      {error && <p className="form-error">{error}</p>}
+      <button className="primary-button wide" disabled={busy}>{busy ? 'Creating…' : 'Create station'} <Check size={16} /></button>
+    </form>
+  </div></div>
+}
+function QrModal({ value, onClose }: { value: string; onClose: () => void }) { return <div className="modal-backdrop" onClick={onClose}><div className="qr-modal" role="dialog" aria-modal="true" aria-label="Reservation QR code" onClick={(event) => event.stopPropagation()}><button className="modal-close" aria-label="Close dialog" onClick={onClose}><X size={18} /></button><p className="eyebrow">APPROVED RESERVATION</p><h2>Ready for the sun.</h2><p className="muted">Show this code at the station to complete the energy transfer.</p><div className="qr-frame"><QRCodeSVG value={value} marginSize={4} size={220} bgColor="#fffdf6" fgColor="#102b2a" /></div><div className="qr-meta"><span>Secure QR payload</span><span>Single use</span></div><button className="primary-button wide" onClick={onClose}>Done <Check size={16} /></button></div></div> }
+export default App
+
