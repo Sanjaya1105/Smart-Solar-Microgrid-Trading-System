@@ -1,0 +1,13 @@
+/*
+ * File: MongoDbSettings.cs
+ * Project: Smart Solar Microgrid Trading System
+ * Purpose: Strongly typed MongoDB configuration values.
+ */
+namespace SolarMicrogrid.Api.Configuration;
+
+public sealed class MongoDbSettings
+{
+    public const string SectionName = "MongoDb";
+    public string ConnectionString { get; set; } = string.Empty;
+    public string DatabaseName { get; set; } = "SolarMicrogridDb";
+}
