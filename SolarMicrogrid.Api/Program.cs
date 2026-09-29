@@ -41,3 +41,35 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
 });
 builder.Services.AddAuthorization();
+
+// Configure controllers, enum JSON values, CORS and Swagger's Bearer input.
+builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddCors(options => options.AddPolicy("Clients", policy => policy.WithOrigins(builder.Configuration.GetSection("AllowedClientOrigins").Get<string[]>() ?? ["http://localhost:3000", "http://localhost:5173"]).AllowAnyHeader().AllowAnyMethod()));
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo { Title = "Smart Solar Microgrid API", Version = "v1" });
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Name = "Authorization", In = ParameterLocation.Header, Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT" });
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement { [new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } }] = Array.Empty<string>() });
+});
+
+var app = builder.Build();
+
+// Use forwarded headers for IIS, consistent errors, HTTPS, CORS and authorization.
+app.UseForwardedHeaders(new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto });
+app.UseMiddleware<ApiExceptionMiddleware>();
+if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
+// Local Android emulator testing uses the HTTP 5180 profile; production/IIS remains HTTPS-only.
+if (!app.Environment.IsDevelopment()) app.UseHttpsRedirection();
+app.UseCors("Clients");
+app.UseAuthentication();
+app.UseAuthorization();
+// Serve the published React build from wwwroot alongside the API on IIS.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.MapControllers();
+app.Run();
+
+// Expose Program to optional integration-test projects.
+public partial class Program { }
+
