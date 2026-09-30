@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.SolarGrid" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#22745f</item>
+        <item name="android:navigationBarColor">#102b2a</item><item name="android:statusBarColor">#102b2a</item>
+    </style>
+</resources>
