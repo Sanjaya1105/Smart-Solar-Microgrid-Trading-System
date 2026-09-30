@@ -11,3 +11,5 @@ public enum NodeStatus { Active, Inactive }
 public enum SlotStatus { Available, Unavailable, FullyBooked }
 public enum ReservationStatus { Pending, Approved, Cancelled, Completed, Rejected }
 public enum EnergyTransactionType { DropOff, Charging }
+public enum NodeStatus { Active, Inactive }
+public enum SlotStatus { Available, Unavailable, FullyBooked }
