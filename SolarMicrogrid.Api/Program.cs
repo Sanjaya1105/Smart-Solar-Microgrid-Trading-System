@@ -1,18 +1,18 @@
-// Bind and validate required service configuration at application startup.
-builder.Services.AddOptions<MongoDbSettings>().Bind(builder.Configuration.GetSection(MongoDbSettings.SectionName)).Validate(x => !string.IsNullOrWhiteSpace(x.ConnectionString), "MongoDb:ConnectionString is required.").ValidateOnStart();
-builder.Services.AddOptions<JwtSettings>().Bind(builder.Configuration.GetSection(JwtSettings.SectionName)).Validate(x => x.Key.Length >= 32 && x.QrSigningKey.Length >= 32, "JWT and QR keys must be at least 32 characters.").ValidateOnStart();
-var jwt = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() ?? throw new InvalidOperationException("JWT configuration is missing.");
+/*
+ * File: Program.cs
+ * Project: Smart Solar Microgrid Trading System
+ * Purpose: Configures the C# FAT-service API, MongoDB, JWT, Swagger and IIS pipeline.
+ */
+using System.Text;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using SolarMicrogrid.Api.Configuration;
+using SolarMicrogrid.Api.Services;
 
-// Register the MongoDB context and all FAT-service business components.
-builder.Services.AddSingleton<MongoDbContext>();
-builder.Services.AddSingleton<PasswordService>();
-builder.Services.AddSingleton<TokenService>();
-builder.Services.AddScoped<AuthService>();
-builder.Services.AddScoped<UserService>();
-builder.Services.AddScoped<StationService>();
-builder.Services.AddScoped<NearbyStationService>();
-builder.Services.AddScoped<ReservationService>();
-builder.Services.AddHostedService<DatabaseInitializer>();
+var builder = WebApplication.CreateBuilder(args);
 
 // Bind and validate required service configuration at application startup.
 builder.Services.AddOptions<MongoDbSettings>().Bind(builder.Configuration.GetSection(MongoDbSettings.SectionName)).Validate(x => !string.IsNullOrWhiteSpace(x.ConnectionString), "MongoDb:ConnectionString is required.").ValidateOnStart();
@@ -72,4 +72,3 @@ app.Run();
 
 // Expose Program to optional integration-test projects.
 public partial class Program { }
-

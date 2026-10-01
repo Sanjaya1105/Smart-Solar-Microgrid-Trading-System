@@ -20,4 +20,25 @@ public sealed class AuthController(AuthService service) : ControllerBase
         var user = await service.RegisterProsumerAsync(request, cancellationToken);
         return CreatedAtAction(nameof(Register), new { id = user.Id }, user);
     }
+
+    [HttpPost("login"), AllowAnonymous]
+    public async Task<ActionResult<LoginResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
+    {
+        // Authenticate any active application role and return a role-bearing JWT.
+        return Ok(await service.LoginAsync(request, cancellationToken));
+    }
+    [HttpGet("account"), Authorize]
+    public async Task<IActionResult> Account(CancellationToken cancellationToken)
+    {
+        // Read only the authenticated account name and email.
+        return Ok(await service.GetAccountAsync(User.UserId(), cancellationToken));
+    }
+
+    [HttpPost("change-password"), Authorize]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken cancellationToken)
+    {
+        // Change the authenticated account password after verifying the current password.
+        await service.ChangePasswordAsync(User.UserId(), request, cancellationToken);
+        return NoContent();
+    }
 }
