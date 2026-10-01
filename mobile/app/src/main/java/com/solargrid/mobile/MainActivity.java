@@ -46,16 +46,101 @@ public final class MainActivity extends AppCompatActivity {
         root.addView(button("Account settings", v -> showSettings())); root.addView(button("Sign out", v -> { store.clear(); showLogin(); }));
     }
     private void showStations() { base("Nearby solar stations"); root.addView(button("Refresh stations", v -> loadStations())); root.addView(button("Back", v -> showDashboard())); loadStations(); }
-    private void loadStations() { run(() -> { JSONArray stations = ApiClient.list("/api/stations?activeOnly=true", store.token()); runOnUiThread(() -> { clearDynamicRows(4); for (int i=0;i<stations.length();i++) { JSONObject station=stations.optJSONObject(i); TextView item=new TextView(this); item.setPadding(0,dp(16),0,dp(16)); double lat=station.optDouble("latitude"), lon=station.optDouble("longitude"); item.setText(station.optString("name")+"\n"+station.optString("address")+"\nGPS "+lat+", "+lon+"\nCapacity "+station.optDouble("capacityKwh")+" kWh\nTap to open in Google Maps"); item.setOnClickListener(v->{ try { startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("geo:"+lat+","+lon+"?q="+lat+","+lon+"("+Uri.encode(station.optString("name") )+")"))); } catch(Exception e) { message.setText("Google Maps is not available on this device."); } }); root.addView(item); } }); }); }
+    private void loadStations() {
+        run(() -> {
+            JSONArray stations;
+            boolean offline = false;
+            try {
+                stations = ApiClient.list("/api/stations?activeOnly=true", store.token());
+                store.cacheReference("stations_active", stations.toString());
+            } catch (Exception networkError) {
+                String cached = store.reference("stations_active");
+                if (cached == null) throw networkError;
+                stations = new JSONArray(cached);
+                offline = true;
+            }
+            JSONArray result = stations;
+            boolean showingCached = offline;
+            runOnUiThread(() -> renderStations(result, showingCached));
+        });
+    }
+
+    private void renderStations(JSONArray stations, boolean offline) {
+        clearDynamicRows(4);
+        if (offline) message.setText("Offline: showing the last synced station list.");
+        for (int i = 0; i < stations.length(); i++) {
+            JSONObject station = stations.optJSONObject(i);
+            if (station == null) continue;
+            TextView item = new TextView(this);
+            item.setPadding(0, dp(16), 0, dp(16));
+            double lat = station.optDouble("latitude"), lon = station.optDouble("longitude");
+            item.setText(station.optString("name") + "\n" + station.optString("address") +
+                    "\nGPS " + lat + ", " + lon + "\nCapacity " +
+                    station.optDouble("capacityKwh") + " kWh\nTap to open in Google Maps");
+            item.setOnClickListener(v -> {
+                try {
+                    startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                            Uri.parse("geo:" + lat + "," + lon + "?q=" + lat + "," + lon +
+                                    "(" + Uri.encode(station.optString("name")) + ")")));
+                } catch (Exception e) {
+                    message.setText("Google Maps is not available on this device.");
+                }
+            });
+            root.addView(item);
+        }
+    }
+
     private void showReservations() { base("My reservations"); root.addView(button("Refresh", v -> loadReservations())); root.addView(button("Back", v -> showDashboard())); loadReservations(); }
-    private void loadReservations() { run(() -> { JSONArray reservations=ApiClient.list("/api/reservations/mine",store.token()); runOnUiThread(() -> { clearDynamicRows(4); for(int i=0;i<reservations.length();i++){ JSONObject item=reservations.optJSONObject(i); LinearLayout card=new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL); TextView row=new TextView(this); row.setPadding(0,15,0,8); row.setText("Status: "+item.optString("status")+"\nEnergy: "+item.optDouble("energyKwh")+" kWh\nReservation: "+item.optString("id")); card.addView(row); String status=item.optString("status"); if("Approved".equals(status)) card.addView(button("Show secure QR", v -> showQr(item.optString("id")))); if(!"Completed".equals(status) && !"Cancelled".equals(status) && !"Rejected".equals(status)) { card.addView(button("Edit reservation", v -> showEditReservation(item))); card.addView(button("Cancel reservation", v -> cancelReservation(item.optString("id")))); } root.addView(card); } }); }); }
-    private void cancelReservation(String reservationId) { run(() -> { ApiClient.request("/api/reservations/"+reservationId+"/cancel", store.token(), "POST", null); runOnUiThread(() -> showSummary("Reservation cancelled", "Your cancellation request was accepted by the server.")); }); }
+
+    private void loadReservations() {
+        run(() -> {
+            JSONArray reservations;
+            boolean offline = false;
+            try {
+                reservations = ApiClient.list("/api/reservations/mine", store.token());
+                store.cacheReservations(reservations);
+            } catch (Exception networkError) {
+                reservations = store.cachedReservations();
+                if (reservations.length() == 0) throw networkError;
+                offline = true;
+            }
+            JSONArray result = reservations;
+            boolean showingCached = offline;
+            runOnUiThread(() -> renderReservations(result, showingCached));
+        });
+    }
+
+    private void renderReservations(JSONArray reservations, boolean offline) {
+        clearDynamicRows(4);
+        if (offline) message.setText("Offline: showing the last synced reservations. Actions require a connection.");
+        for (int i = 0; i < reservations.length(); i++) {
+            JSONObject item = reservations.optJSONObject(i);
+            if (item == null) continue;
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            TextView row = new TextView(this);
+            row.setPadding(0, 15, 0, 8);
+            row.setText("Status: " + item.optString("status") + "\nEnergy: " +
+                    item.optDouble("energyKwh") + " kWh\nReservation: " + item.optString("id"));
+            card.addView(row);
+            if (!offline) {
+                String status = item.optString("status");
+                if ("Approved".equals(status)) card.addView(button("Show secure QR", v -> showQr(item.optString("id"))));
+                if (!"Completed".equals(status) && !"Cancelled".equals(status) && !"Rejected".equals(status)) {
+                    card.addView(button("Edit reservation", v -> showEditReservation(item)));
+                    card.addView(button("Cancel reservation", v -> cancelReservation(item.optString("id"))));
+                }
+            }
+            root.addView(card);
+        }
+    }
+    private void cancelReservation(String reservationId) { run(() -> { ApiClient.request("/api/reservations/"+reservationId+"/cancel", store.token(), "POST", null); store.clearReservationCache(); runOnUiThread(() -> showSummary("Reservation cancelled", "Your cancellation request was accepted by the server.")); }); }
     private void showSummary(String heading, String detail) { base(heading); TextView text=new TextView(this); text.setText(detail+"\n\nThe server has returned a successful result."); text.setTextSize(17); text.setPadding(0,dp(18),0,dp(18)); root.addView(text); root.addView(button("View reservations",v->showReservations())); root.addView(button("Back to dashboard",v->showDashboard())); }
     private void showEditReservation(JSONObject reservation) {
         base("Edit reservation");
         EditText energy=field("Energy kWh",false); energy.setText(reservation.optString("energyKwh")); root.addView(label("Energy amount (kWh)")); root.addView(energy);
         Spinner type=new Spinner(this); type.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"DropOff","Charging"})); String oldType=reservation.optString("transactionType"); if("Charging".equals(oldType)) type.setSelection(1); root.addView(label("Transaction type")); root.addView(type);
-        root.addView(button("Save changes", v -> { try { double amount=Double.parseDouble(energy.getText().toString().trim()); run(() -> { ApiClient.request("/api/reservations/"+reservation.optString("id"),store.token(),"PUT",new JSONObject().put("slotId",reservation.optString("slotId")).put("transactionType",type.getSelectedItem().toString()).put("energyKwh",amount)); runOnUiThread(() -> showSummary("Reservation updated", "Your changes were saved and the reservation is waiting for approval.")); }); } catch(Exception e) { message.setText("Enter a valid energy amount."); } }));
+        root.addView(button("Save changes", v -> { try { double amount=Double.parseDouble(energy.getText().toString().trim()); run(() -> { ApiClient.request("/api/reservations/"+reservation.optString("id"),store.token(),"PUT",new JSONObject().put("slotId",reservation.optString("slotId")).put("transactionType",type.getSelectedItem().toString()).put("energyKwh",amount)); store.clearReservationCache(); runOnUiThread(() -> showSummary("Reservation updated", "Your changes were saved and the reservation is waiting for approval.")); }); } catch(Exception e) { message.setText("Enter a valid energy amount."); } }));
         root.addView(button("Back",v->showReservations()));
     }
     // Keep the heading, status text and refresh button, removing only previously rendered API rows.
@@ -78,7 +163,7 @@ public final class MainActivity extends AppCompatActivity {
                 if (stationIndex < 0 || slotIndex < 0 || stationsData[0].length() == 0 || slotsData[0].length() == 0) { message.setText("Select a station and available time slot first."); return; }
                 JSONObject slot = slotsData[0].getJSONObject(slotIndex);
                 if (energy.getText().toString().trim().isEmpty()) { message.setText("Enter the energy amount."); return; }
-                run(() -> { ApiClient.request("/api/reservations", store.token(), "POST", new JSONObject().put("slotId", slot.getString("id")).put("transactionType", type.getSelectedItem().toString()).put("energyKwh", Double.parseDouble(energy.getText().toString()))); runOnUiThread(() -> showSummary("Booking submitted", "Your energy slot request was sent for approval.")); });
+                run(() -> { ApiClient.request("/api/reservations", store.token(), "POST", new JSONObject().put("slotId", slot.getString("id")).put("transactionType", type.getSelectedItem().toString()).put("energyKwh", Double.parseDouble(energy.getText().toString()))); store.clearReservationCache(); runOnUiThread(() -> showSummary("Booking submitted", "Your energy slot request was sent for approval.")); });
             } catch (Exception e) { message.setText(e.getMessage()); }
         }));
         root.addView(button("Back", v -> showDashboard()));
@@ -89,11 +174,74 @@ public final class MainActivity extends AppCompatActivity {
                 try { String stationId = stationsData[0].getJSONObject(position).getString("id"); loadAvailableSlots(stationId, slotsAdapter, slotsData); } catch (Exception e) { message.setText(e.getMessage()); }
             }
         });
-        run(() -> { JSONArray data = ApiClient.list("/api/stations?activeOnly=true", store.token()); runOnUiThread(() -> { try { stationsData[0] = data; for (int i=0;i<data.length();i++) { JSONObject station=data.getJSONObject(i); stationsAdapter.add(station.optString("name") + " / " + station.optString("address")); } stationsAdapter.notifyDataSetChanged(); } catch (Exception e) { message.setText(e.getMessage()); } }); });
+        run(() -> {
+            JSONArray data;
+            boolean offline = false;
+            try {
+                data = ApiClient.list("/api/stations?activeOnly=true", store.token());
+                store.cacheReference("stations_active", data.toString());
+            } catch (Exception networkError) {
+                String cached = store.reference("stations_active");
+                if (cached == null) throw networkError;
+                data = new JSONArray(cached);
+                offline = true;
+            }
+            JSONArray result = data;
+            boolean showingCached = offline;
+            runOnUiThread(() -> {
+                try {
+                    stationsData[0] = result;
+                    for (int i = 0; i < result.length(); i++) {
+                        JSONObject station = result.getJSONObject(i);
+                        stationsAdapter.add(station.optString("name") + " / " + station.optString("address"));
+                    }
+                    stationsAdapter.notifyDataSetChanged();
+                    if (showingCached) message.setText("Offline: using the last synced station list.");
+                } catch (Exception e) {
+                    message.setText(e.getMessage());
+                }
+            });
+        });
     }
     private TextView label(String text) { TextView label = new TextView(this); label.setText(text); label.setPadding(0, 14, 0, 4); return label; }
     private void loadAvailableSlots(String stationId, ArrayAdapter<String> adapter, final JSONArray[] slotsData) {
-        adapter.clear(); adapter.add("Loading available time slots..."); adapter.notifyDataSetChanged(); slotsData[0] = new JSONArray(); run(() -> { JSONArray data = ApiClient.list("/api/stations/slots?stationId=" + Uri.encode(stationId) + "&availableOnly=true", store.token()); runOnUiThread(() -> { try { adapter.clear(); adapter.add("Select an available time slot"); slotsData[0] = data; for (int i=0;i<data.length();i++) { JSONObject slot=data.getJSONObject(i); adapter.add(formatSlot(slot)); } adapter.notifyDataSetChanged(); if (data.length() == 0) message.setText("No available slots for this station."); } catch (Exception e) { message.setText(e.getMessage()); } }); });
+        adapter.clear();
+        adapter.add("Loading available time slots...");
+        adapter.notifyDataSetChanged();
+        slotsData[0] = new JSONArray();
+        run(() -> {
+            JSONArray data;
+            boolean offline = false;
+            String cacheKey = "slots_" + stationId;
+            try {
+                data = ApiClient.list("/api/stations/slots?stationId=" + Uri.encode(stationId) +
+                        "&availableOnly=true", store.token());
+                store.cacheReference(cacheKey, data.toString());
+            } catch (Exception networkError) {
+                String cached = store.reference(cacheKey);
+                if (cached == null) throw networkError;
+                data = new JSONArray(cached);
+                offline = true;
+            }
+            JSONArray result = data;
+            boolean showingCached = offline;
+            runOnUiThread(() -> {
+                try {
+                    adapter.clear();
+                    adapter.add("Select an available time slot");
+                    slotsData[0] = result;
+                    for (int i = 0; i < result.length(); i++) {
+                        JSONObject slot = result.getJSONObject(i);
+                        adapter.add(formatSlot(slot));
+                    }
+                    adapter.notifyDataSetChanged();
+                    if (result.length() == 0) message.setText("No available slots for this station.");
+                    else if (showingCached) message.setText("Offline: using the last synced time slots. Booking still requires a connection.");
+                } catch (Exception e) {
+                    message.setText(e.getMessage());
+                }
+            });
+        });
     }
     private String formatSlot(JSONObject slot) { return formatApiDate(slot.optString("startUtc")) + " - " + formatApiDate(slot.optString("endUtc")) + " (" + slot.optInt("reservedCapacity") + "/" + slot.optInt("totalCapacity") + " reserved)"; }
     private String formatApiDate(String value) { try { return new java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.getDefault()).format(java.util.Date.from(java.time.Instant.parse(value))); } catch (Exception ignored) { return value; } }
